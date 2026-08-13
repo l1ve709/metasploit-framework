@@ -10,6 +10,9 @@ require 'rex/post/meterpreter/client'
 # certificate hash checking
 require 'rex/socket/x509_certificate'
 
+# parsing of Malleable C2 profiles for transport_add / transport_change
+require 'msf/core/payload/malleable_c2'
+
 require 'openssl'
 
 module Rex
@@ -142,22 +145,27 @@ class ClientCore < Extension
     response = client.send_request(request)
 
     result = {
-      :session_exp => response.get_tlv_value(TLV_TYPE_TRANS_SESSION_EXP),
+      :session_exp => response.get_tlv_value(TLV_TYPE_SESSION_EXPIRY),
       :transports  => []
     }
 
-    response.each(TLV_TYPE_TRANS_GROUP) { |t|
+    response.each(TLV_TYPE_C2) { |t|
+      # TODO: Consider adding more information to the output for malleable profiles?
+      # TLV_TYPE_C2_GET, TLV_TYPE_C2_POST, TLV_TYPE_C2_PREFIX, TLV_TYPE_C2_SUFFIX, TLV_TYPE_C2_ENC_INBOUND, TLV_TYPE_C2_ENC_OUTBOUND,
+      # TLV_TYPE_C2_PREFIX_SKIP, TLV_TYPE_C2_SUFFIX_SKIP,
+      # TLV_TYPE_C2_UUID_COOKIE, TLV_TYPE_C2_UUID_GET, TLV_TYPE_C2_UUID_HEADER
+      # Not sure if this stuff is useful for this display though.
       result[:transports] << {
-        :url            => t.get_tlv_value(TLV_TYPE_TRANS_URL),
-        :comm_timeout   => t.get_tlv_value(TLV_TYPE_TRANS_COMM_TIMEOUT),
-        :retry_total    => t.get_tlv_value(TLV_TYPE_TRANS_RETRY_TOTAL),
-        :retry_wait     => t.get_tlv_value(TLV_TYPE_TRANS_RETRY_WAIT),
-        :ua             => t.get_tlv_value(TLV_TYPE_TRANS_UA),
-        :proxy_host     => t.get_tlv_value(TLV_TYPE_TRANS_PROXY_HOST),
-        :proxy_user     => t.get_tlv_value(TLV_TYPE_TRANS_PROXY_USER),
-        :proxy_pass     => t.get_tlv_value(TLV_TYPE_TRANS_PROXY_PASS),
-        :cert_hash      => t.get_tlv_value(TLV_TYPE_TRANS_CERT_HASH),
-        :custom_headers => t.get_tlv_value(TLV_TYPE_TRANS_HEADERS)
+        :url            => t.get_tlv_value(TLV_TYPE_C2_URL),
+        :comm_timeout   => t.get_tlv_value(TLV_TYPE_C2_COMM_TIMEOUT),
+        :retry_total    => t.get_tlv_value(TLV_TYPE_C2_RETRY_TOTAL),
+        :retry_wait     => t.get_tlv_value(TLV_TYPE_C2_RETRY_WAIT),
+        :ua             => t.get_tlv_value(TLV_TYPE_C2_UA),
+        :proxy_host     => t.get_tlv_value(TLV_TYPE_C2_PROXY_URL),
+        :proxy_user     => t.get_tlv_value(TLV_TYPE_C2_PROXY_USER),
+        :proxy_pass     => t.get_tlv_value(TLV_TYPE_C2_PROXY_PASS),
+        :cert_hash      => t.get_tlv_value(TLV_TYPE_C2_CERT_HASH),
+        :custom_headers => t.get_tlv_value(TLV_TYPE_C2_HEADERS)
       }
     }
 
@@ -171,25 +179,25 @@ class ClientCore < Extension
     request = Packet.create_request(COMMAND_ID_CORE_TRANSPORT_SET_TIMEOUTS)
 
     if opts[:session_exp]
-      request.add_tlv(TLV_TYPE_TRANS_SESSION_EXP, opts[:session_exp])
+      request.add_tlv(TLV_TYPE_SESSION_EXPIRY, opts[:session_exp])
     end
     if opts[:comm_timeout]
-      request.add_tlv(TLV_TYPE_TRANS_COMM_TIMEOUT, opts[:comm_timeout])
+      request.add_tlv(TLV_TYPE_C2_COMM_TIMEOUT, opts[:comm_timeout])
     end
     if opts[:retry_total]
-      request.add_tlv(TLV_TYPE_TRANS_RETRY_TOTAL, opts[:retry_total])
+      request.add_tlv(TLV_TYPE_C2_RETRY_TOTAL, opts[:retry_total])
     end
     if opts[:retry_wait]
-      request.add_tlv(TLV_TYPE_TRANS_RETRY_WAIT, opts[:retry_wait])
+      request.add_tlv(TLV_TYPE_C2_RETRY_WAIT, opts[:retry_wait])
     end
 
     response = client.send_request(request)
 
     {
-      :session_exp  => response.get_tlv_value(TLV_TYPE_TRANS_SESSION_EXP),
-      :comm_timeout => response.get_tlv_value(TLV_TYPE_TRANS_COMM_TIMEOUT),
-      :retry_total  => response.get_tlv_value(TLV_TYPE_TRANS_RETRY_TOTAL),
-      :retry_wait   => response.get_tlv_value(TLV_TYPE_TRANS_RETRY_WAIT)
+      :session_exp  => response.get_tlv_value(TLV_TYPE_SESSION_EXPIRY),
+      :comm_timeout => response.get_tlv_value(TLV_TYPE_C2_COMM_TIMEOUT),
+      :retry_total  => response.get_tlv_value(TLV_TYPE_C2_RETRY_TOTAL),
+      :retry_wait   => response.get_tlv_value(TLV_TYPE_C2_RETRY_WAIT)
     }
   end
 
@@ -346,9 +354,19 @@ class ClientCore < Extension
     # already loaded
     commands = get_loaded_extension_commands(mod.downcase)
 
-    # if there are existing commands for the given extension, then we can use
-    # what's already there
-    unless commands.length > 0
+    # This check is important to keep compatibility with Mettle:
+    # Mettle is the only meterpreter that has stdapi functions embedded in the metsrv.
+    # Double-loading of extensions is prevented by the lib/rex/post/meterpreter/ui/console/command_dispatcher/core.rb line: 1195
+    # However we need to add more flexibility here to allow users loading the split of stdapi in Windows Meterpreter. 
+    # reference: https://github.com/rapid7/metasploit-framework/pull/19975
+    # So here we are actively preventing loading of stdapi if some commands for that extension are already loaded.
+    # So we will not load stdapi if:
+    # - we are running mettle (which has by default those command registered)
+    # - we are running windows meterpreter with one of the stdapi namespace loaded (stdapi_net, stdapi_fs.... etc). 
+    #   partial loading of the other namespace is still possible, we can load stdapi_net and stdapi_fs later.
+    
+    skip_loading = commands.length > 0 && !mod.downcase.start_with?('stdapi_')
+    unless skip_loading
       image = nil
       path = nil
       # If client.sys isn't setup, it's a Windows meterpreter
@@ -393,7 +411,6 @@ class ClientCore < Extension
           'Extension'        => true,
           'SaveToDisk'       => opts['LoadFromDisk'])
     end
-
     # wire the commands into the client
     client.add_extension(mod, commands)
 
@@ -523,7 +540,7 @@ class ClientCore < Extension
 
     # we're reusing the comms timeout setting here instead of
     # creating a whole new TLV value
-    request.add_tlv(TLV_TYPE_TRANS_COMM_TIMEOUT, seconds)
+    request.add_tlv(TLV_TYPE_C2_COMM_TIMEOUT, seconds)
     client.send_request(request)
     return true
   end
@@ -556,7 +573,7 @@ class ClientCore < Extension
     request = Packet.create_request(COMMAND_ID_CORE_TRANSPORT_SETCERTHASH)
 
     hash = Rex::Text.sha1_raw(self.client.sock.sslctx.cert.to_der)
-    request.add_tlv(TLV_TYPE_TRANS_CERT_HASH, hash)
+    request.add_tlv(TLV_TYPE_C2_CERT_HASH, hash)
 
     client.send_request(request)
 
@@ -590,7 +607,7 @@ class ClientCore < Extension
     request = Packet.create_request(COMMAND_ID_CORE_TRANSPORT_GETCERTHASH)
     response = client.send_request(request)
 
-    return response.get_tlv_value(TLV_TYPE_TRANS_CERT_HASH)
+    return response.get_tlv_value(TLV_TYPE_C2_CERT_HASH)
   end
 
   #
@@ -858,7 +875,7 @@ private
   # Helper function to prepare a transport request that will be sent to the
   # attached session.
   #
-  def transport_prepare_request(method, opts={})
+  def transport_prepare_request(command_id, opts={})
     unless valid_transport?(opts[:transport]) && opts[:lport]
       return nil
     end
@@ -872,7 +889,11 @@ private
 
     transport = opts[:transport].downcase
 
-    request = Packet.create_request(method)
+    request = Packet.create_request(command_id)
+
+    if opts[:session_exp]
+      request.add_tlv(TLV_TYPE_SESSION_EXPIRY, opts[:session_exp])
+    end
 
     scheme = transport.split('_')[1]
     url = "#{scheme}://#{opts[:lhost]}:#{opts[:lport]}"
@@ -887,20 +908,28 @@ private
       end
     end
 
-    if opts[:comm_timeout]
-      request.add_tlv(TLV_TYPE_TRANS_COMM_TIMEOUT, opts[:comm_timeout])
+    # When a Malleable C2 profile is supplied, start from its TLV (which carries
+    # UA + GET/POST sub-groups) and layer the rest on top; otherwise build a
+    # bare C2 group.
+    if (opts[:c2_profile] || '').empty?
+      c2_tlv = GroupTlv.new(TLV_TYPE_C2)
+      has_profile = false
+    else
+      profile = Msf::Payload::MalleableC2::Parser.new.parse(opts[:c2_profile])
+      c2_tlv = profile.to_tlv
+      has_profile = true
     end
 
-    if opts[:session_exp]
-      request.add_tlv(TLV_TYPE_TRANS_SESSION_EXP, opts[:session_exp])
+    if opts[:comm_timeout]
+      c2_tlv.add_tlv(TLV_TYPE_C2_COMM_TIMEOUT, opts[:comm_timeout])
     end
 
     if opts[:retry_total]
-      request.add_tlv(TLV_TYPE_TRANS_RETRY_TOTAL, opts[:retry_total])
+      c2_tlv.add_tlv(TLV_TYPE_C2_RETRY_TOTAL, opts[:retry_total])
     end
 
     if opts[:retry_wait]
-      request.add_tlv(TLV_TYPE_TRANS_RETRY_WAIT, opts[:retry_wait])
+      c2_tlv.add_tlv(TLV_TYPE_C2_RETRY_WAIT, opts[:retry_wait])
     end
 
     # do more magic work for http(s) payloads
@@ -914,32 +943,36 @@ private
         url << generate_uri_uuid(sum, opts[:uuid]) + '/'
       end
 
-      opts[:ua] ||= Rex::UserAgent.random
-      request.add_tlv(TLV_TYPE_TRANS_UA, opts[:ua])
+      # When a profile is supplied it controls the UA; otherwise add a default.
+      unless has_profile
+        opts[:ua] ||= Rex::UserAgent.random
+        c2_tlv.add_tlv(TLV_TYPE_C2_UA, opts[:ua])
+      end
 
       if transport == 'reverse_https' && opts[:cert] # currently only https transport offers ssl
         hash = Rex::Socket::X509Certificate.get_cert_file_hash(opts[:cert])
-        request.add_tlv(TLV_TYPE_TRANS_CERT_HASH, hash)
+        c2_tlv.add_tlv(TLV_TYPE_C2_CERT_HASH, hash)
       end
 
       if opts[:proxy_host] && opts[:proxy_port]
         prefix = 'http://'
         prefix = 'socks=' if opts[:proxy_type].to_s.downcase == 'socks'
-        proxy = "#{prefix}#{opts[:proxy_host]}:#{opts[:proxy_port]}"
-        request.add_tlv(TLV_TYPE_TRANS_PROXY_HOST, proxy)
+        proxy = "#{prefix}#{Rex::Socket.to_authority(opts[:proxy_host], opts[:proxy_port])}"
+        c2_tlv.add_tlv(TLV_TYPE_C2_PROXY_URL, proxy)
 
         if opts[:proxy_user]
-          request.add_tlv(TLV_TYPE_TRANS_PROXY_USER, opts[:proxy_user])
+          c2_tlv.add_tlv(TLV_TYPE_C2_PROXY_USER, opts[:proxy_user])
         end
         if opts[:proxy_pass]
-          request.add_tlv(TLV_TYPE_TRANS_PROXY_PASS, opts[:proxy_pass])
+          c2_tlv.add_tlv(TLV_TYPE_C2_PROXY_PASS, opts[:proxy_pass])
         end
       end
 
     end
 
-    request.add_tlv(TLV_TYPE_TRANS_TYPE, VALID_TRANSPORTS[transport])
-    request.add_tlv(TLV_TYPE_TRANS_URL, url)
+    c2_tlv.add_tlv(TLV_TYPE_C2_URL, url)
+
+    request.tlvs << c2_tlv
 
     request
   end

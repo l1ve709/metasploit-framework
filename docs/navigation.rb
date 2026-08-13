@@ -396,6 +396,10 @@ NAVIGATION_CONFIG = [
                 title: without_prefix('Meterpreter ')
               },
               {
+                path: 'Meterpreter-Malleable-C2-Profiles.md',
+                title: without_prefix('Meterpreter ')
+              },
+              {
                 path: 'How-to-get-started-with-writing-a-Meterpreter-script.md'
               },
               {
@@ -403,7 +407,7 @@ NAVIGATION_CONFIG = [
               },
               {
                 path: 'Python-Extension.md'
-              },
+              }
             ]
           },
           {
@@ -447,6 +451,9 @@ NAVIGATION_CONFIG = [
           },
           {
             path: 'How-to-use-Metasploit-with-ngrok.md'
+          },
+          {
+            path: 'How-to-use-Metasploit-MCP-Server.md'
           },
         ]
       },
@@ -596,6 +603,10 @@ NAVIGATION_CONFIG = [
                     title: 'RC4 Support'
                   },
                 ]
+              },
+              {
+                path: 'Post-Mixins.md',
+                title: 'PostMixins'
               },
               {
                 path: 'How-to-log-in-Metasploit.md',
@@ -857,6 +868,9 @@ NAVIGATION_CONFIG = [
             path: 'Loading-Test-Modules.md'
           },
           {
+            path: 'Payload-Testing.md'
+          },
+          {
             path: 'Measuring-Metasploit-Performance.md'
           }
         ]
@@ -902,6 +916,10 @@ NAVIGATION_CONFIG = [
           },
           {
             path: 'GSoC-2023-Project-Ideas.md',
+            title: without_prefix('GSoC')
+          },
+          {
+            path: 'GSoC-2026-Project-Ideas.md',
             title: without_prefix('GSoC')
           },
         ]

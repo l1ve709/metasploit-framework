@@ -6,6 +6,7 @@
 class MetasploitModule < Msf::Auxiliary
 
   include Msf::Exploit::Remote::LDAP
+  include Msf::Exploit::Remote::LDAP::ActiveDirectory
   include Msf::Exploit::Remote::LDAP::Queries
   include Msf::OptionalSession::LDAP
   require 'json'
@@ -42,6 +43,10 @@ class MetasploitModule < Msf::Auxiliary
           'Grant Willcox', # Original module author
         ],
         'References' => [
+          ['ATT&CK', Mitre::Attack::Technique::T1069_002_DOMAIN_GROUPS],
+          ['ATT&CK', Mitre::Attack::Technique::T1087_002_DOMAIN_ACCOUNT],
+          ['ATT&CK', Mitre::Attack::Technique::T1018_REMOTE_SYSTEM_DISCOVERY],
+          ['ATT&CK', Mitre::Attack::Technique::T1201_PASSWORD_POLICY_DISCOVERY]
         ],
         'DisclosureDate' => '2022-05-19',
         'License' => MSF_LICENSE,
@@ -65,6 +70,10 @@ class MetasploitModule < Msf::Auxiliary
       OptPath.new('QUERY_FILE_PATH', [false, 'Path to the JSON or YAML file to load and run queries from'], conditions: %w[ACTION == RUN_QUERY_FILE]),
       OptString.new('QUERY_FILTER', [false, 'Filter to send to the target LDAP server to perform the query'], conditions: %w[ACTION == RUN_SINGLE_QUERY]),
       OptString.new('QUERY_ATTRIBUTES', [false, 'Comma separated list of attributes to retrieve from the server'], conditions: %w[ACTION == RUN_SINGLE_QUERY])
+    ])
+
+    register_advanced_options([
+      OptBool.new('LDAP::QuerySacl', [true, 'Query the SACL field from security descriptors (requires privileges)', false])
     ])
   end
 
@@ -129,9 +138,13 @@ class MetasploitModule < Msf::Auxiliary
     ldap_connect do |ldap|
       validate_bind_success!(ldap)
 
-      fail_with(Failure::UnexpectedReply, "Couldn't discover base DN!") unless ldap.base_dn
-      base_dn = ldap.base_dn
-      print_status("#{ldap.peerinfo} Discovered base DN: #{base_dn}")
+      if datastore['BASE_DN'].blank?
+        fail_with(Failure::UnexpectedReply, "Couldn't discover base DN!") unless ldap.base_dn
+        base_dn = ldap.base_dn
+        print_status("#{ldap.peerinfo} Discovered base DN: #{base_dn}")
+      else
+        base_dn = datastore['BASE_DN']
+      end
 
       schema_dn = ldap.schema_dn
       case action.name
@@ -149,22 +162,21 @@ class MetasploitModule < Msf::Auxiliary
         run_queries_from_file(ldap, parsed_queries, schema_dn, datastore['OUTPUT_FORMAT'])
         return
       when 'RUN_SINGLE_QUERY'
-        unless datastore['QUERY_FILTER'] && datastore['QUERY_ATTRIBUTES']
-          fail_with(Failure::BadConfig, 'When using the RUN_SINGLE_QUERY action, one must supply the QUERY_FILTER and QUERY_ATTRIBUTE datastore options!')
+        unless datastore['QUERY_FILTER']
+          fail_with(Failure::BadConfig, 'When using the RUN_SINGLE_QUERY action, one must supply the QUERY_FILTER datastore option!')
         end
 
         print_status("Sending single query #{datastore['QUERY_FILTER']} to the LDAP server...")
-        attributes = datastore['QUERY_ATTRIBUTES']
-        if attributes.empty?
-          fail_with(Failure::BadConfig, 'Attributes list is empty as we could not find at least one attribute to filter on!')
+        if datastore['QUERY_ATTRIBUTES'].present?
+          # Split attributes string into an array of attributes, splitting on the comma character.
+          # Also downcase for consistency with rest of the code since LDAP searches aren't case sensitive.
+          attributes = datastore['QUERY_ATTRIBUTES'].downcase.split(',')
+
+          # Strip out leading and trailing whitespace from the attributes before using them.
+          attributes.map(&:strip!)
+        else
+          attributes = nil
         end
-
-        # Split attributes string into an array of attributes, splitting on the comma character.
-        # Also downcase for consistency with rest of the code since LDAP searches aren't case sensitive.
-        attributes = attributes.downcase.split(',')
-
-        # Strip out leading and trailing whitespace from the attributes before using them.
-        attributes.map(&:strip!)
         filter_string = datastore['QUERY_FILTER']
         query_base = base_dn
       else
@@ -182,7 +194,13 @@ class MetasploitModule < Msf::Auxiliary
         fail_with(Failure::BadConfig, "Could not compile the filter #{filter_string}. Error was #{e}")
       end
 
-      result_count = perform_ldap_query_streaming(ldap, filter, attributes, query_base, schema_dn) do |result, attribute_properties|
+      controls = []
+      unless datastore['LDAP::QuerySacl']
+        # omit the control entirely if querying the SACL because that's the default behavior
+        controls = [adds_build_ldap_sd_control(sacl: false)]
+      end
+
+      result_count = perform_ldap_query_streaming(ldap, filter, attributes, query_base, schema_dn, controls: controls) do |result, attribute_properties|
         show_output(normalize_entry(result, attribute_properties), datastore['OUTPUT_FORMAT'])
       end
 

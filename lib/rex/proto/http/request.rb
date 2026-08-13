@@ -1,6 +1,8 @@
 # -*- coding: binary -*-
 require 'uri'
 
+require 'rex/text'
+
 
 module Rex
 module Proto
@@ -118,7 +120,7 @@ class Request < Packet
 
     # /././././
     if self.junk_self_referring_directories
-      str.gsub!(/\//) {
+      str.gsub!('/') {
         '/.' * (rand(3) + 1) + '/'
       }
     end
@@ -126,12 +128,12 @@ class Request < Packet
     # /%3faaa=bbbbb
     # which could possibly decode to "/?aaa=bbbbb", which if the IDS normalizes first, then splits the URI on ?, then it can be bypassed
     if self.junk_param_start
-      str.sub!(/\//, '/%3f' + Rex::Text.rand_text_alpha(rand(5) + 1) + '=' + Rex::Text.rand_text_alpha(rand(10) + 1) + '/../')
+      str.sub!('/', '/%3f' + Rex::Text.rand_text_alpha(rand(5) + 1) + '=' + Rex::Text.rand_text_alpha(rand(10) + 1) + '/../')
     end
 
     # /RAND/../RAND../
     if self.junk_directories
-      str.gsub!(/\//) {
+      str.gsub!('/') {
         dirs = ''
         (rand(5)+5).times {
           dirs << '/' + Rex::Text.rand_text_alpha(rand(5) + 1) + '/..'
@@ -144,7 +146,7 @@ class Request < Packet
     #
     # NOTE: this must be done after all other odd directory junk, since they would cancel this out, except junk_end_of_uri, since that a specific slash in a specific place
     if self.junk_slashes
-      str.gsub!(/\//) {
+      str.gsub!('/') {
         '/' * (rand(3) + 2)
       }
       str.sub!(/^[\/]+/, '/') # only one beginning slash!
@@ -217,16 +219,16 @@ class Request < Packet
     str + super
   end
 
+  #
+  # Returns a hijacked version of the body that shoves the request's query string in as a
+  # replacement in cases where there is no body. YOLO! (shrug)
+  #
   def body
     str = super || ''
-    if str.length > 0
-      return str
+    if str.length == 0 && PostRequests.include?(self.method)
+      str = param_string
     end
-
-    if PostRequests.include?(self.method)
-      return param_string
-    end
-    ''
+    str
   end
 
   #
@@ -270,6 +272,11 @@ class Request < Packet
   #
   def meta_vars
   end
+
+  #
+  # An identifier associated with the incoming request, can be used to match requests with sessions.
+  #
+  attr_accessor :conn_id
 
   #
   # The method being used for the request (e.g. GET).

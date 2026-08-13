@@ -82,9 +82,18 @@ module Common
     end
 
     if rhosts.length > 5
+      @rhosts_file_cleanup_proc ||= at_exit do
+        @temp_rhosts_files.each do |path|
+          File.delete(path)
+        rescue => e
+          elog(e)
+        end
+      end
       # Lots of hosts makes 'show options' wrap which is difficult to
       # read, store to a temp file
-      rhosts_file = Rex::Quickfile.new("msf-db-rhosts-")
+      rhosts_file = Rex::Quickfile.create("msf-db-rhosts-")
+      @temp_rhosts_files ||= []
+      @temp_rhosts_files << rhosts_file.path
       mydatastore['RHOSTS'] = 'file:'+rhosts_file.path
       # create the output file and assign it to the RHOSTS variable
       rhosts_file.write(rhosts.join("\n")+"\n")
@@ -194,6 +203,23 @@ module Common
     }ix
 
     path.gsub(regexp, '')
+  end
+
+  # Import payload option definitions into a module's datastore so that
+  # typed validation (e.g. OptPort, OptAddressLocal) fires immediately
+  # on subsequent set calls rather than being deferred until show options
+  # triggers share_datastore.
+  #
+  # @param mod [Msf::Module] the exploit or evasion module
+  # @param payload_name [String, nil] the payload reference name to import from
+  def import_payload_options(mod, payload_name = nil)
+    payload_name ||= mod.datastore['PAYLOAD']
+    return unless payload_name
+
+    p = mod.framework.payloads.create(payload_name)
+    return unless p
+
+    mod.datastore.import_options(p.options)
   end
 
 end

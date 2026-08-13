@@ -2,7 +2,6 @@
 
 require 'net/dns'
 require 'resolv'
-require 'dnsruby'
 
 module Rex
 module Proto
@@ -54,7 +53,7 @@ module Packet
   #
   # Reads a packet into the Net::DNS::Packet format
   #
-  # @param data [String, Net::DNS::Packet, Resolv::DNS::Message, Dnsruby::Message] Input data
+  # @param packet [String, Net::DNS::Packet, Resolv::DNS::Message, Dnsruby::Message] Input data
   #
   # @return [Net::DNS::Packet]
   def self.encode_net(packet)
@@ -66,7 +65,7 @@ module Packet
 
   # Reads a packet into the Resolv::DNS::Message format
   #
-  # @param data [String, Net::DNS::Packet, Resolv::DNS::Message, Dnsruby::Message] Input data
+  # @param packet [String, Net::DNS::Packet, Resolv::DNS::Message, Dnsruby::Message] Input data
   #
   # @return [Resolv::DNS::Message]
   def self.encode_res(packet)
@@ -78,7 +77,7 @@ module Packet
 
   # Reads a packet into the Dnsruby::Message format
   #
-  # @param data [String, Net::DNS::Packet, Resolv::DNS::Message, Dnsruby::Message] Input data
+  # @param packet [String, Net::DNS::Packet, Resolv::DNS::Message, Dnsruby::Message] Input data
   #
   # @return [Dnsruby::Message]
   def self.encode_drb(packet)
@@ -90,7 +89,7 @@ module Packet
 
   # Reads a packet into the raw String format
   #
-  # @param data [String, Net::DNS::Packet, Resolv::DNS::Message, Dnsruby::Message] Input data
+  # @param packet [String, Net::DNS::Packet, Resolv::DNS::Message, Dnsruby::Message] Input data
   #
   # @return [String]
   def self.encode_raw(packet)

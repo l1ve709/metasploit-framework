@@ -44,8 +44,6 @@ module Rex::Proto::Http::WebSocket
       #   binary and text)
       # @param [Symbol] write_type the data type to write to the WebSocket
       def initialize(websocket, read_type: nil, write_type: :binary)
-        initialize_abstraction
-
         # a read type of nil will handle both binary and text frames that are received
         raise ArgumentError, 'read_type must be nil, :binary or :text' unless [nil, :binary, :text].include?(read_type)
         raise ArgumentError, 'write_type must be :binary or :text' unless %i[binary text].include?(write_type)
@@ -65,6 +63,10 @@ module Rex::Proto::Http::WebSocket
           'PeerPort' => peerport,
           'SSL' => websocket.respond_to?(:sslctx) && !websocket.sslctx.nil?
         })
+
+        initialize_abstraction
+
+        lsock.initinfo(Rex::Socket.to_authority(peerhost, peerport), Rex::Socket.to_authority(localhost, localport))
 
         @thread = Rex::ThreadFactory.spawn("WebSocketChannel(#{localhost}->#{peerhost})", false) do
           websocket.wsloop do |data, data_type|
@@ -143,8 +145,8 @@ module Rex::Proto::Http::WebSocket
       # This provides a hook point that is called when data is read from the WebSocket peer. Subclasses can intercept and
       # process the data. The default functionality does nothing.
       #
-      # @param [String] data the data that was read
-      # @param [Symbol] data_type the type of data that was received, either :binary or :text
+      # @param data [String] the data that was read
+      # @param _data_type [Symbol] the type of data that was received, either :binary or :text
       # @return [String, nil] if a string is returned, it's passed through the channel
       def on_data_read(data, _data_type)
         data

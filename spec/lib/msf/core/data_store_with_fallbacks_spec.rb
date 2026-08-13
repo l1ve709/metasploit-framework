@@ -173,7 +173,7 @@ RSpec.shared_examples_for 'a datastore' do
         'bar' => bar_option
       }
 
-      expect(subject.options).to eq(expected_options)
+      expect(subject.options.instance_values).to eq(expected_options.instance_values)
     end
   end
 
@@ -420,12 +420,8 @@ RSpec.shared_examples_for 'a datastore' do
         s
       end
 
-      # Note: This aligns the first implementation of the DataStore class.
-      # In certain scenarios it does not seem like desired behavior.
-      it 'does not perform option validation' do
-        subject.merge!({ 'FloatValue' => 'invalid_value' })
-
-        expect(subject['FloatValue']).to eq('invalid_value')
+      it 'does perform option validation' do
+        expect { subject.merge!({ 'FloatValue' => 'invalid_value' }) }.to raise_error(Msf::OptionValidateError, / Value 'invalid_value' is not valid for option 'FloatValue'/)
       end
     end
   end
@@ -672,8 +668,8 @@ RSpec.shared_examples_for 'a datastore' do
       it 'should return a Hash with correct values' do
         expected_to_h = {
           'SMBDomain' => 'WORKGROUP',
-          'SMBUser' => '',
-          'USER_ATTR' => ''
+          'SMBUser' => nil,
+          'USER_ATTR' => nil
         }
         expect(subject.to_h).to eq(expected_to_h)
       end
@@ -688,11 +684,11 @@ RSpec.shared_examples_for 'a datastore' do
         expected_to_h = {
           'NewOptionName' => 'overridden_default_new_option_name',
           'SMBDomain' => 'WORKGROUP',
-          'SMBUser' => '',
-          'USER_ATTR' => '',
+          'SMBUser' => nil,
+          'USER_ATTR' => nil,
           'foo' => 'overridden_default_foo',
           'bar' => 'default_bar_value',
-          'baz' => ''
+          'baz' => nil
         }
         expect(subject.to_h).to eq(expected_to_h)
       end
@@ -700,7 +696,7 @@ RSpec.shared_examples_for 'a datastore' do
   end
 end
 
-RSpec.describe Msf::DataStoreWithFallbacks do
+RSpec.describe Msf::DataStore do
   include_context 'datastore subjects'
 
   subject(:default_subject) do
@@ -712,11 +708,11 @@ RSpec.describe Msf::DataStoreWithFallbacks do
   it_behaves_like 'a datastore'
 end
 
-RSpec.describe Msf::ModuleDataStoreWithFallbacks do
+RSpec.describe Msf::ModuleDataStore do
   include_context 'datastore subjects'
 
   let(:framework_datastore) do
-    Msf::DataStoreWithFallbacks.new
+    Msf::DataStore.new
   end
   let(:mod) do
     framework = instance_double(Msf::Framework, datastore: framework_datastore)

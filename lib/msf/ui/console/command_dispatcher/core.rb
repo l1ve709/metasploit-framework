@@ -272,20 +272,28 @@ class Core
   def cmd_banner(*args)
     banner  = "%cya" + Banner.to_s + "%clr\n\n"
 
-    stats       = framework.stats
-    version     = "%yelmetasploit v#{Metasploit::Framework::VERSION}%clr",
-    exp_aux_pos = "#{stats.num_exploits} exploits - #{stats.num_auxiliary} auxiliary - #{stats.num_post} post",
-    pay_enc_nop = "#{stats.num_payloads} payloads - #{stats.num_encoders} encoders - #{stats.num_nops} nops",
-    eva         = "#{stats.num_evasion} evasion",
-    padding     = 48
+    stats = framework.stats
+    version = "%yelmetasploit v#{Metasploit::Framework::VERSION}%clr",
+    stats_line_1 = [
+      "#{stats.num_exploits.to_fs(:delimited)} exploits",
+      "#{stats.num_auxiliary.to_fs(:delimited)} auxiliary",
+      "#{stats.num_payloads.to_fs(:delimited)} payloads"
+    ].join(' - ')
+    stats_line_2 = [
+      "#{stats.num_post.to_fs(:delimited)} post",
+      "#{stats.num_encoders.to_fs(:delimited)} encoders",
+      "#{stats.num_nops.to_fs(:delimited)} nops",
+      "#{stats.num_evasion.to_fs(:delimited)} evasion"
+    ].join(' - ')
+    padding = 54
 
     banner << ("       =[ %-#{padding+8}s]\n" % version)
-    banner << ("+ -- --=[ %-#{padding}s]\n" % exp_aux_pos)
-    banner << ("+ -- --=[ %-#{padding}s]\n" % pay_enc_nop)
-    banner << ("+ -- --=[ %-#{padding}s]\n" % eva)
+    banner << ("+ -- --=[ %-#{padding}s]\n" % stats_line_1)
+    banner << ("+ -- --=[ %-#{padding}s]\n" % stats_line_2)
 
     banner << "\n"
     banner << Rex::Text.wordwrap('Metasploit Documentation: https://docs.metasploit.com/', indent = 0, cols = 60)
+    banner << Rex::Text.wordwrap('The Metasploit Framework is a Rapid7 Open Source Project', indent = 0, cols = 60)
 
     # Display the banner
     print_line(banner)
@@ -1009,7 +1017,7 @@ class Core
 
     # Parse any extra options that should be passed to the plugin
     args.each { |opt|
-      k, v = opt.split(/\=/)
+      k, v = opt.split('=')
 
       opts[k] = v if (k and v)
     }
@@ -1082,7 +1090,7 @@ class Core
       tabs += tab_complete_filenames(str,words)
     end
 
-    return tabs.map{|e| e.sub(/\.rb/, '')} - framework.plugins.map(&:name)
+    return tabs.map{|e| e.sub('.rb', '')} - framework.plugins.map(&:name)
   end
 
   def cmd_route_help
@@ -1235,7 +1243,7 @@ class Core
           if (route.comm.kind_of?(Msf::Session))
             gw = "Session #{route.comm.sid}"
           else
-            gw = route.comm.name.split(/::/)[-1]
+            gw = route.comm.name.split('::')[-1]
           end
 
           tbl_ipv4 << [ route.subnet, route.netmask, gw ] if Rex::Socket.is_ipv4?(route.netmask)
@@ -1632,6 +1640,12 @@ class Core
               print_line(output) if output
             when 'mssql', 'postgresql', 'mysql'
               session.run_cmd(cmd, driver.output)
+            when 'hwbridge'
+              if session.respond_to?(:console) && session.console
+                session.console.run_single(cmd)
+              else
+                print_error("Session #{s} has no hwbridge console; skipping...")
+              end
             end
           ensure
             # Restore timeout for each session
@@ -1801,11 +1815,33 @@ class Core
         end
       end
     when 'upexec'
-      print_status("Executing 'post/multi/manage/shell_to_meterpreter' on " +
-                    "session(s): #{session_list}")
       session_list.each do |sess_id|
         session = verify_session(sess_id)
-        if session
+        next unless session
+
+        if session.type == 'smb'
+          # Route SMB sessions to the dedicated upgrade module
+          mod = framework.modules.create('post/windows/manage/smb_to_meterpreter')
+          unless mod
+            print_error('Failed to create post/windows/manage/smb_to_meterpreter module.')
+            next
+          end
+
+          print_status("Executing 'post/windows/manage/smb_to_meterpreter' on session: [#{sess_id}]")
+          opts = { 'SESSION' => sess_id.to_s }
+          if session.exploit_datastore
+            %w[LHOST LPORT TARGET_ARCH].each do |key|
+              opts[key] = session.exploit_datastore[key] if session.exploit_datastore[key]
+            end
+          end
+          mod.run_simple({
+            'LocalInput' => driver.input,
+            'LocalOutput' => driver.output,
+            'Options' => opts
+          })
+        else
+          print_status("Executing 'post/multi/manage/shell_to_meterpreter' on " \
+                        "session: [#{sess_id}]")
           if session.respond_to?(:response_timeout)
             last_known_timeout = session.response_timeout
             session.response_timeout = response_timeout
@@ -2081,7 +2117,7 @@ class Core
     print_line "datastore.  Use -g to operate on the global datastore."
     print_line
     print_line "If setting a PAYLOAD, this command can take an index from `show payloads'."
-    print @@set_opts.usage if framework.features.enabled?(Msf::FeatureManager::DATASTORE_FALLBACKS)
+    print @@set_opts.usage
     print_line
   end
 
@@ -2103,7 +2139,7 @@ class Core
       elsif args[0] == '-a'
         args.shift
         append = true
-      elsif (args[0] == '-c' || args[0] == '--clear') && framework.features.enabled?(Msf::FeatureManager::DATASTORE_FALLBACKS)
+      elsif (args[0] == '-c' || args[0] == '--clear')
         args.shift
         clear = true
       else
@@ -2116,14 +2152,7 @@ class Core
     if (active_module and global == false)
       datastore = active_module.datastore
 
-      tab_complete_option_names(active_module, '', []).each do |opt_name|
-        valid_options << opt_name
-        option = active_module.options[opt_name]
-        next unless option
-
-        # aliases that are defined for backwards compatibility are not tab completed but are still valid option names
-        valid_options += active_module.options[opt_name].aliases
-      end
+      valid_options = valid_datastore_option_names(active_module, include_aliases: true)
     else
       global = true
       datastore = self.framework.datastore
@@ -2146,13 +2175,11 @@ class Core
           datastore) + "\n")
       return true
     elsif args.length == 1 && !clear
-      if global || valid_options.any? { |vo| vo.casecmp?(args[0]) }
+      message = global ? nil : unknown_datastore_option_message(active_module, args[0], valid_options: valid_options)
+      if message.nil?
         print_line("#{args[0]} => #{datastore[args[0]]}")
         return true
       else
-        message = "Unknown datastore option: #{args[0]}."
-        suggestion = DidYouMean::SpellChecker.new(dictionary: valid_options).correct(args[0]).first
-        message << " Did you mean #{suggestion}?" if suggestion
         print_error(message)
         cmd_set_help
         return false
@@ -2171,7 +2198,8 @@ class Core
     end
 
     # Set PAYLOAD
-    if name.upcase == 'PAYLOAD' && active_module && (active_module.exploit? || active_module.evasion?) && !clear
+    payload_changed = name.upcase == 'PAYLOAD' && active_module && (active_module.exploit? || active_module.evasion?) && !clear
+    if payload_changed
       value = trim_path(value, 'payload')
 
       index_from_list(payload_show_results, value) do |mod|
@@ -2182,11 +2210,9 @@ class Core
       end
     end
 
-    unless global || valid_options.any? { |vo| vo.casecmp?(name) }
-      message = "Unknown datastore option: #{name}."
-      suggestion = DidYouMean::SpellChecker.new(dictionary: valid_options).correct(name).first
-      message << " Did you mean #{suggestion}?" if suggestion
-      print_warning(message)
+    unless global
+      message = unknown_datastore_option_message(active_module, name, valid_options: valid_options)
+      print_warning(message) if message
     end
 
     # If the driver indicates that the value is not valid, bust out.
@@ -2207,6 +2233,11 @@ class Core
     rescue Msf::OptionValidateError => e
       print_error(e.message)
       elog('Exception encountered in cmd_set', error: e)
+    end
+
+    # Import payload options so validation applies immediately on subsequent set calls
+    if payload_changed
+      import_payload_options(active_module)
     end
 
     # Set PAYLOAD from TARGET
@@ -2271,7 +2302,7 @@ class Core
     print_line "Usage: setg [option] [value]"
     print_line
     print_line "Exactly like set -g, set a value in the global datastore."
-    print @@setg_opts.usage if framework.features.enabled?(Msf::FeatureManager::DATASTORE_FALLBACKS)
+    print @@setg_opts.usage
     print_line
   end
 
@@ -2433,83 +2464,18 @@ class Core
   end
 
   def cmd_unset_help
-    if framework.features.enabled?(Msf::FeatureManager::DATASTORE_FALLBACKS)
-      print_line "Usage: unset [-g] var1 var2 var3 ..."
-      print_line
-      print_line "The unset command is used to unset one or more variables."
-      print_line "To flush all entries, specify 'all' as the variable name."
-      print_line "With -g, operates on global datastore variables."
-      print_line
-    else
-      print_line "Usage: unset [options] var1 var2 var3 ..."
-      print_line
-      print_line "The unset command is used to unset one or more variables which have been set by the user."
-      print_line "To update all entries, specify 'all' as the variable name."
-      print @@unset_opts.usage
-      print_line
-    end
+    print_line "Usage: unset [-g] var1 var2 var3 ..."
+    print_line
+    print_line "The unset command is used to unset one or more variables."
+    print_line "To flush all entries, specify 'all' as the variable name."
+    print_line "With -g, operates on global datastore variables."
+    print_line
   end
 
   #
   # Unsets a value if it's been set.
   #
   def cmd_unset(*args)
-    if framework.features.enabled?(Msf::FeatureManager::DATASTORE_FALLBACKS)
-      return cmd_unset_with_fallbacks(*args)
-    end
-
-    # Figure out if these are global variables
-    global = false
-
-    if (args[0] == '-g')
-      args.shift
-      global = true
-    end
-
-    # Determine which data store we're operating on
-    if (active_module and global == false)
-      datastore = active_module.datastore
-    else
-      datastore = framework.datastore
-    end
-
-    # No arguments?  No cookie.
-    if (args.length == 0)
-      cmd_unset_help
-      return false
-    end
-
-    # If all was specified, then flush all of the entries
-    if args[0] == 'all'
-      print_line("Flushing datastore...")
-
-      # Re-import default options into the module's datastore
-      if (active_module and global == false)
-        active_module.import_defaults
-      # Or simply clear the global datastore
-      else
-        datastore.clear
-      end
-
-      return true
-    end
-
-    while ((val = args.shift))
-      if (driver.on_variable_unset(global, val) == false)
-        print_error("The variable #{val} cannot be unset at this time.")
-        next
-      end
-
-      print_line("Unsetting #{val}...")
-
-      datastore.delete(val)
-    end
-  end
-
-  #
-  # Unsets a value if it's been set, resetting the value back to a default value
-  #
-  def cmd_unset_with_fallbacks(*args)
     if args.include?('-h') || args.include?('--help')
       cmd_unset_help
       return
@@ -2591,7 +2557,7 @@ class Core
     print_line "Usage: unsetg [options] var1 var2 var3 ..."
     print_line
     print_line "Exactly like unset -g, unset global variables, or all"
-    print @@unsetg_opts.usage if framework.features.enabled?(Msf::FeatureManager::DATASTORE_FALLBACKS)
+    print @@unsetg_opts.usage
     print_line
   end
 

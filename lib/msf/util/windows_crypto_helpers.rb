@@ -2,6 +2,9 @@ module Msf
 module Util
 module WindowsCryptoHelpers
 
+  EMPTY_LM = "\xaa\xd3\xb4\x35\xb5\x14\x04\xee\xaa\xd3\xb4\x35\xb5\x14\x04\xee".b
+  EMPTY_NT = "\x31\xd6\xcf\xe0\xd1\x6a\xe9\x31\xb7\x3c\x59\xd7\xe0\xc0\x89\xc0".b
+
   #class Error < RuntimeError; end
   #class Unknown < Error; end
 
@@ -200,28 +203,26 @@ module WindowsCryptoHelpers
   def decrypt_user_key(hboot_key, user_v, rid)
     sam_lmpass = "LMPASSWORD\x00"
     sam_ntpass = "NTPASSWORD\x00"
-    sam_empty_lm = ['aad3b435b51404eeaad3b435b51404ee'].pack('H*')
-    sam_empty_nt = ['31d6cfe0d16ae931b73c59d7e0c089c0'].pack('H*')
 
     # TODO: use a proper structure for V data, instead of unpacking directly
     hashlm_off = user_v[0x9c, 4]&.unpack('V')&.first
     hashlm_len = user_v[0xa0, 4]&.unpack('V')&.first
     if hashlm_off && hashlm_len
       hashlm_enc = user_v[hashlm_off + 0xcc, hashlm_len]
-      hashlm = decrypt_user_hash(rid, hboot_key, hashlm_enc, sam_lmpass, sam_empty_lm)
+      hashlm = decrypt_user_hash(rid, hboot_key, hashlm_enc, sam_lmpass, EMPTY_LM)
     else
       elog('decrypt_user_key: Unable to extract LM hash, using empty LM hash instead')
-      hashlm = sam_empty_lm
+      hashlm = EMPTY_LM
     end
 
     hashnt_off = user_v[0xa8, 4]&.unpack('V')&.first
     hashnt_len = user_v[0xac, 4]&.unpack('V')&.first
     if hashnt_off && hashnt_len
       hashnt_enc = user_v[hashnt_off + 0xcc, hashnt_len]
-      hashnt = decrypt_user_hash(rid, hboot_key, hashnt_enc, sam_ntpass, sam_empty_nt)
+      hashnt = decrypt_user_hash(rid, hboot_key, hashnt_enc, sam_ntpass, EMPTY_NT)
     else
       elog('decrypt_user_key: Unable to extract NT hash, using empty NT hash instead')
-      hashnt = sam_empty_nt
+      hashnt = EMPTY_NT
     end
 
     [hashnt, hashlm]
@@ -330,7 +331,7 @@ module WindowsCryptoHelpers
   # http://web.mit.edu/kerberos/krb5-latest/doc/admin/enctypes.html?highlight=des#enctype-compatibility
   #
   # @param raw_secret [String] The data to encrypt
-  # @param key [String] The salt used by the encryption algorithm
+  # @param salt [String] The salt used by the encryption algorithm
   # @return [String, nil] The encrypted data
   def des_cbc_md5(raw_secret, salt)
     odd = true
@@ -372,7 +373,7 @@ module WindowsCryptoHelpers
   #
   # @param algorithm [String] The AES algorithm to use (e.g. `128-CBC` or `256-CBC`)
   # @param raw_secret [String] The data to encrypt
-  # @param key [String] The salt used by the encryption algorithm
+  # @param salt [String] The salt used by the encryption algorithm
   # @return [String, nil] The encrypted data
   def aes_cts_hmac_sha1_96(algorithm, raw_secret, salt)
     iterations = 4096

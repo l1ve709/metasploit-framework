@@ -10,6 +10,13 @@ require 'ruby_smb/dcerpc/lsarpc'
 require 'ruby_smb/dcerpc/efsrpc'
 
 class MetasploitModule < Msf::Auxiliary
+
+  module EfsrpcOverLsarpc
+    include RubySMB::Dcerpc::Efsrpc
+
+    UUID = RubySMB::Dcerpc::Efsrpc::LSARPC_UUID
+  end
+
   include Msf::Exploit::Remote::DCERPC
   include Msf::Exploit::Remote::SMB::Client::Authenticated
   include Msf::Auxiliary::Scanner
@@ -20,7 +27,7 @@ class MetasploitModule < Msf::Auxiliary
   # Efsrpc and it's normal UUID
   PIPE_HANDLES = {
     lsarpc: {
-      endpoint: RubySMB::Dcerpc::Lsarpc,
+      endpoint: EfsrpcOverLsarpc,
       filename: 'lsarpc'.freeze
     },
     efsrpc: {
@@ -54,7 +61,9 @@ class MetasploitModule < Msf::Auxiliary
       'References' => [
         [ 'CVE', '2021-36942' ],
         [ 'URL', 'https://github.com/topotam/PetitPotam' ],
-        [ 'URL', 'https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-efsr/403c7ae0-1a3a-4e96-8efc-54e79a2cc451' ]
+        [ 'URL', 'https://docs.microsoft.com/en-us/openspecs/windows_protocols/ms-efsr/403c7ae0-1a3a-4e96-8efc-54e79a2cc451' ],
+        ['ATT&CK', Mitre::Attack::Technique::T1187_FORCED_AUTHENTICATION],
+        ['ATT&CK', Mitre::Attack::Technique::T1212_EXPLOITATION_FOR_CREDENTIAL_ACCESS]
       ],
       'License' => MSF_LICENSE
     )

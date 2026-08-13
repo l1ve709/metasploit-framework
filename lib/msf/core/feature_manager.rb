@@ -15,11 +15,11 @@ module Msf
 
     CONFIG_KEY = 'framework/features'
     WRAPPED_TABLES = 'wrapped_tables'
-    DATASTORE_FALLBACKS = 'datastore_fallbacks'
     FULLY_INTERACTIVE_SHELLS = 'fully_interactive_shells'
     MANAGER_COMMANDS = 'manager_commands'
     METASPLOIT_PAYLOAD_WARNINGS = 'metasploit_payload_warnings'
     DEFER_MODULE_LOADS = 'defer_module_loads'
+    SKIP_CHECKSUM_VALIDATION = 'skip_checksum_validation'
     DNS = 'dns'
     HIERARCHICAL_SEARCH_TABLE = 'hierarchical_search_table'
     SMB_SESSION_TYPE = 'smb_session_type'
@@ -28,6 +28,7 @@ module Msf
     MSSQL_SESSION_TYPE = 'mssql_session_type'
     LDAP_SESSION_TYPE = 'ldap_session_type'
     SHOW_SUCCESSFUL_LOGINS = 'show_successful_logins'
+    DISPLAY_MODULE_ACTION = 'display_module_action'
 
     DEFAULTS = [
       {
@@ -49,13 +50,6 @@ module Msf
         developer_notes: 'Useful for developers, likely not to ever be useful for an average user'
       }.freeze,
       {
-        name: DATASTORE_FALLBACKS,
-        description: 'When enabled you can consistently set username across modules, instead of setting SMBUser/FTPUser/BIND_DN/etc',
-        requires_restart: true,
-        default_value: true,
-        developer_notes: 'This functionality is enabled by default now, and the feature flag can be removed now'
-      }.freeze,
-      {
         name: METASPLOIT_PAYLOAD_WARNINGS,
         description: 'When enabled Metasploit will output warnings about missing Metasploit payloads, for instance if they were removed by antivirus etc',
         requires_restart: true,
@@ -66,8 +60,15 @@ module Msf
         name: DEFER_MODULE_LOADS,
         description: 'When enabled will not eagerly load all modules',
         requires_restart: true,
+        default_value: true,
+        developer_notes: 'Enabled in Metasploit 6.4.x'
+      }.freeze,
+      {
+        name: SKIP_CHECKSUM_VALIDATION,
+        description: 'When enabled skips module file checksum validation at boot, improving startup time. Use reload_all to refresh modules after changes.',
+        requires_restart: true,
         default_value: false,
-        developer_notes: 'Needs a final round of testing. Can be enabled after 6.4.0 is released.'
+        developer_notes: 'Useful for developers who want faster boot and can reload_all manually when modules change'
       }.freeze,
       {
         name: SMB_SESSION_TYPE,
@@ -101,8 +102,8 @@ module Msf
         name: LDAP_SESSION_TYPE,
         description: 'When enabled will allow for the creation/use of LDAP sessions',
         requires_restart: true,
-        default_value: false,
-        developer_notes: 'To be enabled by default after appropriate testing'
+        default_value: true,
+        developer_notes: 'Enabled in Metasploit 6.4.52'
       }.freeze,
       {
         name: SHOW_SUCCESSFUL_LOGINS,
@@ -124,6 +125,13 @@ module Msf
         requires_restart: false,
         default_value: true,
         developer_notes: 'Enabled in Metasploit 6.4.x'
+      }.freeze,
+      {
+        name: DISPLAY_MODULE_ACTION,
+        description: 'When enabled after using a module the current action and number of actions will be displayed',
+        requires_restart: false,
+        default_value: true,
+        developer_notes: 'Added as a feature so users can turn it off if they wish to reduce clutter in their terminal'
       }.freeze
     ].freeze
 

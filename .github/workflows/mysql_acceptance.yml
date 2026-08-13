@@ -44,7 +44,7 @@ on:
 jobs:
   mysql:
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 40
+    timeout-minutes: 60
 
     services:
       mysql:
@@ -79,6 +79,11 @@ jobs:
 
       - name: Checkout code
         uses: actions/checkout@v4
+
+      # https://github.com/orgs/community/discussions/26952
+      - name: Support longpaths
+        if: runner.os == 'Windows'
+        run: git config --system core.longpaths true
 
       - name: Setup Ruby
         env:
@@ -136,6 +141,11 @@ jobs:
       - name: Install system dependencies (Linux)
         if: always()
         run: sudo apt-get -y --no-install-recommends install libpcap-dev graphviz
+
+      # https://github.com/orgs/community/discussions/26952
+      - name: Support longpaths
+        if: runner.os == 'Windows'
+        run: git config --system core.longpaths true
 
       - name: Setup Ruby
         if: always()

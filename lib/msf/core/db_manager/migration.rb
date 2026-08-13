@@ -2,7 +2,7 @@
 module Msf::DBManager::Migration
   # Loads Metasploit Data Models and adds gathers migration paths.
   #
-  # @return Array[String]
+  # @return [Array<String>]
   def add_rails_engine_migration_paths
     unless defined? ActiveRecord
       fail "Bundle installed '--without #{Bundler.settings.without.join(' ')}'.  To clear the without option do " \
@@ -17,39 +17,28 @@ module Msf::DBManager::Migration
   #
   # @param config [Hash] see ActiveRecord::Base.establish_connection
   # @param verbose [Boolean] see ActiveRecord::Migration.verbose
-  # @return [Array<ActiveRecord::MigrationProxy] List of migrations that
+  # @return [Array<ActiveRecord::MigrationProxy>] List of migrations that
   #   ran.
   #
   # @see ActiveRecord::MigrationContext.migrate
   def migrate(config=nil, verbose=false)
     ran = []
-    # Rails 5 changes ActiveRecord parents means to migrate outside
-    # the `rake` task framework has to dig a little lower into ActiveRecord
-    # to set up the DB connection capable of interacting with migration.
-    previouslyConnected = ActiveRecord::Base.connected?
-    unless previouslyConnected
-      ApplicationRecord.remove_connection
-      ActiveRecord::Base.establish_connection(config)
-    end
+
     ActiveRecord::Migration.verbose = verbose
     ActiveRecord::Base.connection_pool.with_connection do
       begin
-        context = default_migration_context
-        if needs_migration?(context)
-          ran = context.migrate
+        with_migration_context do |context|
+          if context.needs_migration?
+            ran = context.migrate
+          end
         end
-          # ActiveRecord::Migrator#migrate rescues all errors and re-raises them
-          # as StandardError
+      # ActiveRecord::Migrator#migrate rescues all errors and re-raises them as StandardError
       rescue StandardError => error
         self.error = error
         elog('DB.migrate threw an exception', error: error)
       end
     end
 
-    unless previouslyConnected
-      ActiveRecord::Base.remove_connection
-      ApplicationRecord.establish_connection(config)
-    end
     # Since the connections that existed before the migrations ran could
     # have outdated column information, reset column information for all
     # ApplicationRecord descendents to prevent missing method errors for
@@ -57,15 +46,14 @@ module Msf::DBManager::Migration
     # information was cached.
     reset_column_information
 
-    return ran
+    ran
   end
 
   # Determine if the currently established database connection needs migration
   #
-  # @param [ActiveRecord::MigrationContext,snil] context The migration context to check. Will default if not supplied
   # @return [Boolean] True if migration is required, false otherwise
-  def needs_migration?(context = default_migration_context)
-    ActiveRecord::Base.connection_pool.with_connection do
+  def needs_migration?
+    with_migration_context do |context|
       return context.needs_migration?
     end
   end
@@ -77,14 +65,13 @@ module Msf::DBManager::Migration
 
   private
 
-  # @return [ActiveRecord::MigrationContext]
-  def default_migration_context
-    ActiveRecord::MigrationContext.new(gather_engine_migration_paths, ActiveRecord::SchemaMigration)
+  def with_migration_context
+    yield ActiveRecord::MigrationContext.new(gather_engine_migration_paths)
   end
 
   # Loads gathers migration paths from all loaded Rails engines.
   #
-  # @return Array[String]
+  # @return [Array<String>]
   def gather_engine_migration_paths
     paths = ActiveRecord::Migrator.migrations_paths
 

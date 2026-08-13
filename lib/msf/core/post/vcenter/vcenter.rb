@@ -102,7 +102,7 @@ module Msf
 
         #
         # Function to validate an x509 private key
-        # @param cert [String] the string to determine if its a valid x509 private key
+        # @param private_key [String] the string to determine if its a valid x509 private key
         # @return [OpenSSL::PKey::RSA] or nil on error
         #
         def validate_pkey(private_key)
@@ -118,6 +118,7 @@ module Msf
 
         #
         # It returns the vcenter product banner and build number
+        # Cross reference https://knowledge.broadcom.com/external/article/326316/build-numbers-and-versions-of-vmware-vce.html
         # @return [String] of vcenter product banner and build number
         #
         def get_vcenter_build
@@ -125,6 +126,7 @@ module Msf
             return cmd_exec("#{vpxd_bin} -v").split("\n").last.strip
           end
 
+          # this file may not be getting updated any longer. On vCenter 8.0.0.10000 it reads 6.5.0.0 Build 16197320
           if file_exist?(manifest_file)
             xml = read_file(manifest_file)
             xmldoc = Nokogiri::XML(xml) do |config|

@@ -13,6 +13,11 @@ module DNS
   class StaticHostnames
     extend Forwardable
 
+    # DNS record type constants (matching Dnsruby::Types::A and Dnsruby::Types::AAAA)
+    # Defined locally to avoid loading dnsruby during boot
+    TYPE_A    = 1
+    TYPE_AAAA = 28
+
     def_delegators :@hostnames, :each, :each_with_index, :length, :empty?, :sort_by
 
     # @param [Hash<String, IPAddr>] hostnames The hostnames to IP address mappings to initialize with.
@@ -55,9 +60,8 @@ module DNS
     #
     # @param [String] hostname The hostname to retrieve an address for.
     # @param [Integer] type The family of address to return represented as a DNS type (either A or AAAA).
-    # @return Returns the IP address if it was found, otherwise nil.
-    # @rtype [IPAddr, nil]
-    def get1(hostname, type = Dnsruby::Types::A)
+    # @return [IPAddr, nil] Returns the IP address if it was found, otherwise nil.
+    def get1(hostname, type = TYPE_A)
       get(hostname, type).first
     end
 
@@ -65,9 +69,8 @@ module DNS
     #
     # @param [String] hostname The hostname to retrieve an address for.
     # @param [Integer] type The family of address to return represented as a DNS type (either A or AAAA).
-    # @return Returns an array of IP addresses.
-    # @rtype [Array<IPAddr>]
-    def get(hostname, type = Dnsruby::Types::A)
+    # @return [Array<IPAddr>] Returns an array of IP addresses.
+    def get(hostname, type = TYPE_A)
       hostname = hostname.downcase
       @hostnames.fetch(hostname, {}).fetch(type, []).dup
     end
@@ -89,9 +92,9 @@ module DNS
       hostname = hostname.downcase.delete_suffix('.')
       this_host = @hostnames.fetch(hostname, {})
       if ip_address.family == ::Socket::AF_INET
-        type = Dnsruby::Types::A
+        type = TYPE_A
       else
-        type = Dnsruby::Types::AAAA
+        type = TYPE_AAAA
       end
       this_type = this_host.fetch(type, [])
       this_type << ip_address unless this_type.include?(ip_address)
@@ -108,9 +111,9 @@ module DNS
     def delete(hostname, ip_address)
       ip_address = IPAddr.new(ip_address) if ip_address.is_a?(String) && Rex::Socket.is_ip_addr?(ip_address)
       if ip_address.family == ::Socket::AF_INET
-        type = Dnsruby::Types::A
+        type = TYPE_A
       else
-        type = Dnsruby::Types::AAAA
+        type = TYPE_AAAA
       end
 
       hostname = hostname.downcase

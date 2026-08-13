@@ -27,7 +27,7 @@ Solino.
 ### Setup
 A privileged user is required to run this module, typically a local or domain
 Administrator. It has been tested against multiple Windows versions, from
-Windows XP/Server 2003 to Windows 10/Server version 2004.
+Windows XP/Server 2003 to Windows 10/Server version 2022.
 
 ## Verification Steps
 1. Start msfconsole
@@ -52,6 +52,18 @@ Windows XP/Server 2003 to Windows 10/Server version 2004.
 ### INLINE
 Use inline technique to read protected keys from the registry remotely without
 saving the hives to disk (default: true).
+
+### KRB_USERS
+Restrict retrieving domain information to the users or groups specified. This
+is a comma-separated list of Active Directory groups and users. This parameter
+is only utilised for domain replication (`action` set to `DOMAIN` or `ALL`).
+`set KRB_USERS "user1,user2,Domain Admins"
+
+### KRB_TYPES
+Restrict retrieving domain information to a specific type of account; either
+`USERS_ONLY` or `COMPUTERS_ONLY`, or `ALL` to retrieve all accounts. This
+parameter is only utilised for domain replication (`action` set to `DOMAIN` or
+`ALL`). It is ignored if `KRB_USERS` is also set.
 
 ## Actions
 
@@ -78,7 +90,7 @@ sensitive information.
 
 ### Windows Server 2012 (Domain Controller)
 ```
-msf6 auxiliary(gather/windows_secrets_dump) > options
+msf auxiliary(gather/windows_secrets_dump) > options
 
 Module options (auxiliary/gather/windows_secrets_dump):
 
@@ -98,7 +110,7 @@ Auxiliary action:
    ALL   Dump everything
 
 
-msf6 auxiliary(gather/windows_secrets_dump) > run
+msf auxiliary(gather/windows_secrets_dump) > run
 [*] Running module against 192.168.100.123
 
 [*] 192.168.100.123:445 - Service RemoteRegistry is in stopped state

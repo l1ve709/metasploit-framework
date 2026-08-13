@@ -61,35 +61,32 @@ class Auxiliary
     rhosts_walker = Msf::RhostsWalker.new(rhosts, mod_with_opts.datastore)
 
     begin
-      mod_with_opts.validate
-    rescue ::Msf::OptionValidateError => e
-      ::Msf::Ui::Formatter::OptionValidateError.print_error(mod_with_opts, e)
-      return false
-    end
-
-    begin
       # Check if this is a scanner module or doesn't target remote hosts
-      if rhosts.blank? || mod.class.included_modules.include?(Msf::Auxiliary::Scanner)
-        mod_with_opts.run_simple(
+      if rhosts.blank? ||
+         mod.class.included_modules.include?(Msf::Auxiliary::MultipleTargetHosts) ||
+         !mod.datastore.options.key?('RHOSTS')
+        mod_with_opts.run_simple({
           'Action'         => args[:action],
           'LocalInput'     => driver.input,
           'LocalOutput'    => driver.output,
           'RunAsJob'       => jobify,
           'Quiet'          => args[:quiet]
-        )
+        })
       # For multi target attempts with non-scanner modules.
       else
+        # When RHOSTS is split, the validation changes slightly, so perform it reports the host the validation failed for
+        mod_with_opts.validate
         rhosts_walker.each do |datastore|
           mod_with_opts = mod.replicant
           mod_with_opts.datastore.merge!(datastore)
           print_status("Running module against #{datastore['RHOSTS']}")
-          mod_with_opts.run_simple(
+          mod_with_opts.run_simple({
             'Action'         => args[:action],
             'LocalInput'     => driver.input,
             'LocalOutput'    => driver.output,
             'RunAsJob'       => false,
             'Quiet'          => args[:quiet]
-          )
+          })
         end
       end
     rescue ::Timeout::Error
@@ -102,15 +99,14 @@ class Auxiliary
     rescue ::Interrupt
       print_error("Auxiliary interrupted by the console user")
     rescue ::Msf::OptionValidateError => e
-      ::Msf::Ui::Formatter::OptionValidateError.print_error(running_mod, e)
+      ::Msf::Ui::Formatter::OptionValidateError.print_error(mod_with_opts, e)
+      return false
     rescue ::Exception => e
       print_error("Auxiliary failed: #{e.class} #{e}")
-      if(e.class.to_s != 'Msf::OptionValidateError')
-        print_error("Call stack:")
-        e.backtrace.each do |line|
-          break if line =~ /lib.msf.base.simple/
-          print_error("  #{line}")
-        end
+      print_error("Call stack:")
+      e.backtrace.each do |line|
+        break if line =~ /lib.msf.base.simple/
+        print_error("  #{line}")
       end
 
       return false

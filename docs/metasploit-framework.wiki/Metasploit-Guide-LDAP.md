@@ -34,10 +34,17 @@ use auxiliary/gather/ldap_query
 run rhost=192.168.123.13 username=Administrator@domain.local password=p4$$w0rd action=ENUM_ACCOUNTS
 ```
 
+Alternatively, the URI syntax can be used:
+
+```
+use auxiliary/gather/ldap_query
+run ldap://domain.local;Administrator:p4$$w0rd@192.168.123.13/dc=domain,dc=local action=ENUM_ACCOUNTS
+```
+
 Example output:
 
 ```msf
-msf6 auxiliary(gather/ldap_query) > run rhost=192.168.123.13 username=Administrator@domain.local password=p4$$w0rd action=ENUM_ACCOUNTS
+msf auxiliary(gather/ldap_query) > run rhost=192.168.123.13 username=Administrator@domain.local password=p4$$w0rd action=ENUM_ACCOUNTS
 [*] Running module against 192.168.123.13
 
 [*] Discovering base DN automatically
@@ -75,7 +82,7 @@ This module has a selection of inbuilt queries which can be configured via the `
 - `ENUM_COMPUTERS` - Dump all objects containing an objectCategory or objectClass of Computer.
 - `ENUM_CONSTRAINED_DELEGATION` - Dump info about all known objects that allow constrained delegation.
 - `ENUM_DNS_RECORDS` - Dump info about DNS records the server knows about using the dnsNode object class.
-- `ENUM_DNS_ZONES` - Dump info about DNS zones the server knows about using the dnsZone object class under the DC DomainDnsZones. This isneeded - as without this BASEDN prefix we often miss certain entries.
+- `ENUM_DNS_ZONES` - Dump info about DNS zones the server knows about using the dnsZone object class under the DC DomainDnsZones. This is needed - as without this BASEDN prefix we often miss certain entries.
 - `ENUM_DOMAIN` - Dump info about the Active Directory domain.
 - `ENUM_DOMAIN_CONTROLLERS` - Dump all known domain controllers.
 - `ENUM_EXCHANGE_RECIPIENTS` - Dump info about all known Exchange recipients.
@@ -96,6 +103,7 @@ This module has a selection of inbuilt queries which can be configured via the `
 - `ENUM_USER_PASSWORD_NEVER_EXPIRES` - Dump info about all users whose password never expires.
 - `ENUM_USER_PASSWORD_NOT_REQUIRED` - Dump info about all users whose password never expires and whose account is still enabled.
 - `ENUM_USER_SPNS_KERBEROAST` - Dump info about all user objects with Service Principal Names (SPNs) for kerberoasting.
+- `ENUM_PRE_WINDOWS_2000_COMPUTERS` - Dump info about all computer objects likely created as a "pre-Windows 2000 computer", for which the password might be predictable.
 
 ### Kerberos Authentication
 
@@ -104,8 +112,8 @@ Details on the Kerberos specific option names are documented in [[Kerberos Servi
 Query LDAP for accounts:
 
 ```msf
-msf6 > use auxiliary/gather/ldap_query
-msf6 auxiliary(gather/ldap_query) > run action=ENUM_ACCOUNTS rhost=192.168.123.13 username=Administrator password=p4$$w0rd ldap::auth=kerberos ldap::rhostname=dc3.demo.local domain=demo.local domaincontrollerrhost=192.168.123.13
+msf > use auxiliary/gather/ldap_query
+msf auxiliary(gather/ldap_query) > run action=ENUM_ACCOUNTS rhost=192.168.123.13 username=Administrator password=p4$$w0rd ldap::auth=kerberos ldap::rhostname=dc3.demo.local domain=demo.local domaincontrollerrhost=192.168.123.13
 [*] Running module against 192.168.123.13
 
 [+] 192.168.123.13:88 - Received a valid TGT-Response

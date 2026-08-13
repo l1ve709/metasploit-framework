@@ -35,8 +35,8 @@ module Msf
     end
 
     # @return [OptString]
-    def self.Proxies(default=nil, required=false, desc="A proxy chain of format type:host:port[,type:host:port][...]")
-      Msf::OptString.new(__method__.to_s, [ required, desc, default ])
+    def self.Proxies(default=nil, required=false, desc="A proxy chain of format type:host:port[,type:host:port][...]. Supported proxies: #{Rex::Socket::Proxies.supported_types.join(', ')}")
+      Msf::OptProxies.new(__method__.to_s, [ required, desc, default ])
     end
 
     # @return [OptRhosts]
@@ -85,11 +85,9 @@ module Msf
         ),
         OptString.new('HttpProxyUser', 'An optional proxy server username',
           aliases: ['PayloadProxyUser'],
-          max_length: Rex::Payloads::Meterpreter::Config::PROXY_USER_SIZE - 1
         ),
         OptString.new('HttpProxyPass', 'An optional proxy server password',
           aliases: ['PayloadProxyPass'],
-          max_length: Rex::Payloads::Meterpreter::Config::PROXY_PASS_SIZE - 1
         ),
         OptEnum.new('HttpProxyType', 'The type of HTTP proxy',
           enums: ['HTTP', 'SOCKS'],

