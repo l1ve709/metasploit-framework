@@ -69,6 +69,36 @@ Keeping the following in mind gives your contribution the best chance of landing
 * **Don't** include more than one module per pull request.
 * **Don't** submit new [scripts].  Scripts are shipped as examples for automating local tasks, and anything "serious" can be done with post modules and local exploits.
 
+**Scaffolding a new module:** The best way to start a new module is to scaffold it first -- the built-in generator creates a module with correct structure, required metadata, and matching documentation:
+
+```
+bundle exec rake 'msf:generate[exploit,linux/http/my_vuln]'
+bundle exec rake 'msf:generate[auxiliary,scanner/http/my_scanner]'
+bundle exec rake 'msf:generate[post,linux/gather/my_gatherer]'
+```
+
+New to the generator? Preview the output first without writing any files by setting `MSF_DRY_RUN=1`:
+
+```
+MSF_DRY_RUN=1 bundle exec rake 'msf:generate[exploit,linux/http/my_vuln]'
+```
+
+Pass additional parameters for platform and architecture:
+
+```
+bundle exec rake 'msf:generate[exploit,windows/http/my_vuln,win,x64]'
+```
+
+Set author and CVE via environment variables:
+
+```
+MSF_MOD_AUTHOR="Your Name" MSF_MOD_CVE="2024-12345" bundle exec rake 'msf:generate[exploit,linux/http/my_vuln]'
+```
+
+The generator creates both the module file and a documentation skeleton under `documentation/modules/`. Run `bundle exec rake -T msf` to see all available tasks.
+
+**Before submitting:** Resolve all `TODO:` and `PLACEHOLDER:` comments and placeholder values in the generated files. No stub descriptions, empty `Notes` arrays, or template text should remain in the final module. Run `ruby tools/dev/msftidy.rb` and `bundle exec rubocop` against your module to catch issues early.
+
 #### <u>Modernizing Existing Modules</u>
 We welcome PRs that bring older modules up to current conventions. High-value improvements include:
 
@@ -76,6 +106,7 @@ We welcome PRs that bring older modules up to current conventions. High-value im
 * **Migrating cmd_exec to create_process** — replacing `cmd_exec("cmd #{input}")` with `create_process("cmd", args: [input])` eliminates command injection risks.
 * **Removing HttpFingerprint** — replacing the deprecated `HttpFingerprint` constant with a proper `check` method gives users version-aware vulnerability verification.
 * **Removing unnecessary DefaultOptions PAYLOAD** — letting the framework choose the best payload improves user experience.
+* **Removing redundant peer prefixes** — stripping `#{peer}`, `#{rhost}:#{rport}`, or `#{Rex::Socket.to_authority(rhost, rport)}` from the start of `print_*`/`vprint_*` messages. The framework already prepends host:port via `print_prefix`.
 
 Keep modernization PRs focused: one pattern fix per PR, or one subsystem at a time. Include verification steps showing the module still works after the change. See [AGENTS.md](./AGENTS.md) for the full legacy patterns table with modern replacements and the canonical module structure template.
 

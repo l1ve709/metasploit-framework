@@ -4,6 +4,17 @@ applyTo: "modules/**/*.rb"
 
 # Module Development Instructions
 
+## Getting Started
+
+Before writing a module from scratch, scaffold it with the generator:
+```
+bundle exec rake 'msf:generate[TYPE,PATH]'
+```
+This creates the module file and documentation skeleton with correct structure and metadata.
+Run `bundle exec rake msf:generate:types` for available types and examples.
+
+After scaffolding, resolve ALL `TODO:` and `PLACEHOLDER:` comments and placeholder values before submitting. No placeholder text, empty Notes arrays, or stub methods should remain in the final module.
+
 ## Structure Order
 
 1. Header comment block
@@ -52,6 +63,7 @@ Valid values with descriptions: [`lib/msf/core/constants.rb`](../../lib/msf/core
 - Return bare `CheckCode::Safe` without a reason string
 - Use `JSON.parse(res.body)` — use `res.get_json_document`
 - Print `"#{ip}:#{port}"` — use `Rex::Socket.to_authority(ip, port)`
+- Prefix `print_*`/`vprint_*` messages with `#{peer}`, `#{rhost}:#{rport}`, or `#{Rex::Socket.to_authority(rhost, rport)}` — the framework auto-prepends host:port via `print_prefix`
 
 ## Auxiliary Modules
 
